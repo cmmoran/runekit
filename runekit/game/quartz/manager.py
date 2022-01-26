@@ -2,6 +2,7 @@ import time
 from functools import reduce
 from typing import List, Dict, Optional, Union
 
+import logging
 import Quartz
 import ApplicationServices
 from PySide2.QtCore import QTimer, Signal, Slot
@@ -24,6 +25,7 @@ class QuartzGameManager(GameManager):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
         self._instances = {}
         self.request_accessibility_popup.connect(self.accessibility_popup)
         self._setup_tap()
@@ -77,27 +79,54 @@ class QuartzGameManager(GameManager):
         except RuntimeError:
             pass
 
-    def get_instances(self) -> List[GameInstance]:
-        windows = Quartz.CGWindowListCopyWindowInfo(
-            Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
+    def window_info(self, v):
+        print(
+            str(v.valueForKey_('kCGWindowOwnerPID') or '?').rjust(7) +
+            ' ' + str(v.valueForKey_('kCGWindowNumber') or '?').rjust(5) +
+            ' {' + ('' if v.valueForKey_('kCGWindowBounds') is None else (
+                    str(int(v.valueForKey_('kCGWindowBounds').valueForKey_('X'))) + ',' +
+                    str(int(v.valueForKey_('kCGWindowBounds').valueForKey_('Y'))) + ',' +
+                    str(int(v.valueForKey_('kCGWindowBounds').valueForKey_('Width'))) + ',' +
+                    str(int(v.valueForKey_('kCGWindowBounds').valueForKey_('Height')))
+            )).ljust(21) + '}' +
+            '\t[' + ((v.valueForKey_('kCGWindowOwnerName') or '') + ']') +
+            ('' if v.valueForKey_('kCGWindowName') is None else (' ' +
+                                                                 v.valueForKey_('kCGWindowName') or ''))
         )
 
-        for window in windows:
-            if window[Quartz.kCGWindowOwnerName] == "rs2client":
+    def window_list(self, wl):
+        for v in wl:
+            self.window_info(v)
+
+    def get_instances(self) -> List[GameInstance]:
+        full_screen_windows = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListExcludeDesktopElements, Quartz.kCGNullWindowID
+        )
+
+        for window in full_screen_windows:
+            owner_name = window.valueForKey_(Quartz.kCGWindowOwnerName) or ''
+            window_name = window.valueForKey_(Quartz.kCGWindowName) or ''
+
+            if owner_name == "rs2client" and window_name == "RuneScape":
+                self.window_info(window)
+
                 wid = int(window[Quartz.kCGWindowNumber])
                 if wid not in self._instances:
                     pid = int(window[Quartz.kCGWindowOwnerPID])
                     self._instances[wid] = QuartzGameInstance(
                         self, wid, pid, parent=self
                     )
-
-        return list(self._instances.values())
+        instance_list = list(self._instances.values())
+        self.logger.info(f"Instance list: {instance_list}")
+        # instance_list = sorted(list(self._instances.values()), key=lambda x: x.height)
+        return instance_list
 
     def get_active_instance(self) -> Union[GameInstance, None]:
         if not self._instances:
             return None
 
-        return list(self._instances.values())[0]
+        instance_list = list(self._instances.values())[0]
+        return instance_list
 
     def get_instance_by_pid(self, pid: int) -> Optional[QuartzGameInstance]:
         for instance in self._instances.values():
@@ -126,8 +155,8 @@ class QuartzGameManager(GameManager):
         # Check for cmd1
         if nsevent.type() == Quartz.NSEventTypeKeyDown:
             if (
-                nsevent.keyCode() == 18
-                and nsevent.modifierFlags() & Quartz.NSEventModifierFlagCommand
+                    nsevent.keyCode() == 18
+                    and nsevent.modifierFlags() & Quartz.NSEventModifierFlagCommand
             ):
                 instance.alt1_pressed.emit()
                 return None

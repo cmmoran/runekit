@@ -1,8 +1,7 @@
 import logging
-from typing import TYPE_CHECKING, Callable, Tuple, Dict
+from typing import TYPE_CHECKING, Callable, Tuple, Dict, List
 
-import numpy as np
-from PySide2.QtCore import Qt, QRect, QTimer
+from PySide2.QtCore import Qt, QRect, QTimer, QPoint
 from PySide2.QtGui import QGuiApplication, QPen
 from PySide2.QtWidgets import (
     QMainWindow,
@@ -26,72 +25,86 @@ class DesktopWideOverlay(QMainWindow):
 
     def __init__(self):
         super().__init__(
-            flags=Qt.Widget
-            | Qt.FramelessWindowHint
-            | Qt.BypassWindowManagerHint
-            | Qt.WindowTransparentForInput
-            | Qt.WindowStaysOnTopHint
+            flags=Qt.Widget | Qt.FramelessWindowHint | Qt.BypassWindowManagerHint | Qt.WindowTransparentForInput | Qt.WindowStaysOnTopHint | Qt.ToolTip
         )
         self.logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
+        # self.setStyleSheet("background: rgba(0, 255, 255, 32)")
         self.setStyleSheet("background: transparent")
         self._instances = {}
 
-        virtual_screen = QRect(0, 0, 0, 0)
-
+        # self.scene = QGraphicsScene(QRectF(), parent=self)
+        #
+        max_w = 0
+        max_h = 0
         for screen in QGuiApplication.screens():
-            # TODO: Handle screen change
-            geom = screen.virtualGeometry()
-            virtual_screen = virtual_screen.united(geom)
-
-        self.scene = QGraphicsScene(
-            0, 0, virtual_screen.width(), virtual_screen.height(), parent=self
-        )
-
-        self.view = QGraphicsView(self.scene, self)
-        self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.view.setStyleSheet("background: transparent")
-        self.view.setGeometry(0, 0, virtual_screen.width(), virtual_screen.height())
-        self.view.setInteractive(False)
+            max_w = max(screen.geometry().width(), max_w)
+            max_h = max(screen.geometry().height(), max_h)
 
         self.transparent_pen = QPen()
         self.transparent_pen.setBrush(Qt.NoBrush)
 
-        self.setGeometry(virtual_screen)
+        self.setGeometry(0, 0, max_w, max_h)
 
     def add_instance(
-        self, instance: "GameInstance"
+            self, instance: "GameInstance"
     ) -> Tuple[QGraphicsItem, Callable[[], None]]:
         """Add instance to manage, return a disconnect function and the canvas"""
-        positionChanged = lambda rect: self.on_instance_moved(instance, rect)
-        instance.positionChanged.connect(positionChanged)
+        def position_changed(rect):
+            self.on_instance_moved(instance, rect)
 
-        focusChanged = lambda focus: self.on_instance_focus_change(instance, focus)
-        instance.focusChanged.connect(focusChanged)
+        instance.positionChanged.connect(position_changed)
+
+        def focus_changed(focus):
+            self.on_instance_focus_change(instance, focus)
+
+        instance.focusChanged.connect(focus_changed)
 
         instance_pos = instance.get_position()
-        gfx = QGraphicsRectItem(rect=instance_pos)
+
+        screen = instance.get_screen()
+
+        geom = screen.geometry()
+        screen_rect = QRect(0, 0, geom.width(), geom.height())
+        self.scene = QGraphicsScene(screen_rect)
+        self.view = QGraphicsView(self.scene, self)
+        self.view.setScene(self.scene)
+        self.view.setSceneRect(screen_rect)
+        self.view.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.view.setStyleSheet("background: transparent;")
+        # self.view.setStyleSheet("background: rgba(0, 255, 255, 32);")
+        self.view.setInteractive(False)
+        self.view.setGeometry(screen_rect)
+        gfx = QGraphicsRectItem(rect=screen_rect)
         gfx.setPen(self.transparent_pen)
-        gfx.setPos(instance_pos.x(), instance_pos.y())
+        # q_point = QPoint(instance_pos.x(), instance_pos.y())
+        # gfx.setPos(q_point)
         self.scene.addItem(gfx)
         self._instances[instance.wid] = gfx
+        self.setGeometry(geom)
+        self.logger.info(
+            f"onscreen: ({geom.x()},{geom.y()}:{geom.width()} x {geom.height()}) self: ({self.geometry()})  scene: ({self.scene.sceneRect().toRect()}) view:({self.view.geometry()}) gfx:({gfx.scenePos()}")
 
         def disconnect():
             gfx.hide()
             self.scene.removeItem(gfx)
-            instance.positionChanged.disconnect(positionChanged)
-            instance.focusChanged.disconnect(focusChanged)
+            instance.positionChanged.disconnect(position_changed)
+            instance.focusChanged.disconnect(focus_changed)
 
         return gfx, disconnect
 
     def on_instance_focus_change(self, instance, focus):
+        self.logger.info(f"Focus:{instance.get_position()} {focus}")
         # self._instances[instance.wid].setVisible(focus)
         pass
 
     def on_instance_moved(self, instance, pos: QRect):
+        self.logger.info(f"Moved: {pos}")
         rect = self._instances[instance.wid]
         rect.setRect(0, 0, pos.width(), pos.height())
         rect.setPos(pos.x(), pos.y())

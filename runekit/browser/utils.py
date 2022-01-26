@@ -79,7 +79,7 @@ def image_to_stream(
             height = image.height
 
         if not ignore_limit and width * height * 4 > TRANSFER_LIMIT:
-            return ""
+            return bytes("")
 
         image = image.crop((x, y, x + width, y + height))
 

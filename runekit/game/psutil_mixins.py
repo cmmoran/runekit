@@ -19,7 +19,7 @@ class PsUtilBaseMixin:
 
 class PsUtilNetStat(PsUtilBaseMixin):
     __cached_rdns: dict[str, str]
-    __last_world = None
+    __last_world = -1
     world_regex = re.compile(r"^world([0-9]+)\.runescape\.com$")
 
     def __init__(self, *args, **kwargs):
@@ -40,7 +40,7 @@ class PsUtilNetStat(PsUtilBaseMixin):
             addrs = self.__get_connections()
         except psutil.AccessDenied:
             logger.warning("Cannot get connections", exc_info=True)
-            return None
+            return -1
 
         for conn in addrs:
             if conn.status != psutil.CONN_ESTABLISHED:
@@ -81,7 +81,7 @@ class PsUtilNetStat(PsUtilBaseMixin):
     @Slot()
     def __update_world(self):
         new_world = self.fetch_world()
-        if new_world != self.__last_world:
+        if new_world and new_world != self.__last_world:
             logger.info("World hopped from %d to %d", self.__last_world, new_world)
             self.__last_world = new_world
             self.worldChanged.emit(new_world)

@@ -15,7 +15,7 @@
 - [x] alt1.rsWidth, rsHeight, rsScaling
 - [x] alt1.rsActive
 - [x] alt1.userResize
-- [ ] alt1.identiyAppUrl
+- [ ] alt1.identifyAppUrl
 - [x] alt1.openBrowser
 - [x] alt1.clearBinds
 - [ ] alt1.registerStatusDaemon

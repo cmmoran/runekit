@@ -14,10 +14,10 @@ class GameSnapMixin(QMainWindow):
     def snap_to_game(self):
         rect = self.app.game_instance.get_position()
         pos = rect.topLeft()
-        if pos.x() < 0:
-            pos.setX(0)
-        if pos.y() < 0:
-            pos.setY(0)
+        # if pos.x() < 0:
+        #     pos.setX(0)
+        # if pos.y() < 0:
+        #     pos.setY(0)
 
         self.move(pos)
         self.__last_game_pos = self.app.game_instance.get_position()

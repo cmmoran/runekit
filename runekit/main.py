@@ -14,7 +14,10 @@ import runekit._resources
 from runekit import browser
 from runekit.game import get_platform_manager
 from runekit.host import Host
-
+import AppKit
+info = AppKit.NSBundle.mainBundle().infoDictionary()
+info["LSBackgroundOnly"] = "1"
+info["LSUIElement"] = "1"
 
 @click.command(
     context_settings=dict(
@@ -25,7 +28,7 @@ from runekit.host import Host
 @click.argument("qt_args", nargs=-1, type=click.UNPROCESSED)
 @click.argument("app_url", required=False)
 def main(app_url, game_index, qt_args):
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
 
     logging.info("Starting QtWebEngine")
     browser.init()

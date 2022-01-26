@@ -18,11 +18,13 @@ dist/RuneKit.app: RuneKit.spec main.py poetry.lock runekit/_resources.py $(wildc
 		--exclude-module tkinter \
 		-s -d noarchive \
 		--osx-bundle-identifier de.cupco.runekit \
+		--noconfirm \
 		$<
 
 dist/RuneKit.app.zip: dist/RuneKit.app
 	cd dist; zip -r -9 RuneKit.app.zip RuneKit.app
-
+	python3 ./fix_app_qt_folder_names_for_codesign.py ./dist/RuneKitApp.app
+	codesign -s - --force --all-architectures --timestamp --deep ./dist/RuneKitApp.app
 # AppImage
 
 build/python3.9.7.AppImage:

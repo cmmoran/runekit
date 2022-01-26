@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Union
 import xcffib.composite
 import xcffib.xproto
 from PySide2.QtCore import QRect, Signal, Slot
-from PySide2.QtGui import QWindow, QGuiApplication
+from PySide2.QtGui import QWindow, QGuiApplication, QScreen
 from PySide2.QtWidgets import QGraphicsItem
 
 from runekit.game.instance import GameInstance
@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
 
 class X11GameInstance(QtGrabMixin, QtEmbedMixin, PsUtilNetStat, GameInstance):
-    wid: int
     refresh_rate = 100
 
     manager: "X11GameManager"
@@ -81,6 +80,9 @@ class X11GameInstance(QtGrabMixin, QtEmbedMixin, PsUtilNetStat, GameInstance):
         self.manager.xcomposite.NameWindowPixmap(
             self.wid, self.pixmap_id, is_checked=True
         )
+
+    def get_screen(self) -> QScreen:
+        pass
 
     def get_position(self) -> QRect:
         if self.cached_position:

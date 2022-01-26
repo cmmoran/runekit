@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Literal, Optional, Union
 import numpy as np
 from PIL import Image
 from PySide2.QtCore import QObject, Signal, Property, QRect, Slot
-from PySide2.QtGui import QWindow
+from PySide2.QtGui import QWindow, QScreen
 from PySide2.QtWidgets import QGraphicsItem
 
 from runekit.image.np_utils import np_crop
@@ -18,6 +18,7 @@ ImageType = Union[np.ndarray, Image.Image]
 
 
 class GameInstance(QObject):
+    wid: int
     refresh_rate = 1000
     manager: "GameManager"
     _last_game_activity: float = 0
@@ -37,6 +38,14 @@ class GameInstance(QObject):
 
     game_activity = Signal()
     last_game_activity = Property(float, get_last_game_activity, notify=game_activity)
+
+    @abc.abstractmethod
+    def get_screen(self) -> QScreen:
+        """Return the screen displaying the game window"""
+        ...
+
+    screenChanged = Signal(QScreen)
+    screen = Property(QScreen, get_screen, notify=screenChanged)
 
     @abc.abstractmethod
     def get_position(self) -> QRect:

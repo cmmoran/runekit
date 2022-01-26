@@ -69,9 +69,9 @@ class OverlayApi(QObject):
             self.logger.info("Call ID reset")
             self.reset()
 
-        self.queue.append((call_id, command, args))
+        self.queue.append((call_id, command, list(args)))
         self.queue.sort(key=lambda x: x[0])
-        # self.logger.debug("%d %s %s", call_id, command, repr(args))
+        self.logger.info("%d %s %s", call_id, command, repr(args))
 
         QTimer.singleShot(0, self.process_queue)
 
@@ -129,7 +129,8 @@ class OverlayApi(QObject):
     def reset(self):
         if hasattr(self, "groups"):
             for item in self.groups.values():
-                item.scene().removeItem(item)
+                if item and item.scene():
+                    item.scene().removeItem(item)
 
         self.groups = collections.defaultdict(list)
         self.frozen_group = {}

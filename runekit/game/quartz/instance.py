@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 import Quartz
 import objc
 from PIL import Image
-from PySide2.QtCore import QRect
-from PySide2.QtGui import QGuiApplication
+from PySide2.QtCore import QRect, QPoint, QSize
+from PySide2.QtGui import QGuiApplication, QScreen
 import ApplicationServices
 from PySide2.QtWidgets import QGraphicsItem
 
@@ -133,14 +133,21 @@ class QuartzGameInstance(PsUtilNetStat, GameInstance):
         objc.context.unregister(self)
         self._overlay_disconnect()
 
+    def get_screen(self) -> QScreen:
+        rect = self.get_position()
+        screen = QGuiApplication.screenAt(rect.topLeft())
+        return screen
+
     def get_position(self) -> QRect:
         # The docs say this API is expensive...
         infos = Quartz.CGWindowListCreateDescriptionFromArray([self.wid])
         info = infos[0]  # FIXME: what if window closed
+        # self.logger.info(f"get_position:{infos}")
         return cgrectref_to_qrect(info[Quartz.kCGWindowBounds])
 
     def get_scaling(self) -> float:
-        screen = QGuiApplication.screenAt(self.get_position().topLeft())
+        screen = self.get_screen()
+        # self.logger.info(f"get_position:(topLeft):{self.get_position().topLeft()}")
         return screen.devicePixelRatio()
 
     def is_focused(self) -> bool:

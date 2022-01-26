@@ -1,11 +1,10 @@
 import logging
-import sys
 from typing import TYPE_CHECKING
 
-from PySide2.QtCore import Qt, Slot, QRect, QObject, QUrl
-from PySide2.QtGui import QIcon, QDesktopServices
-from PySide2.QtWebEngineWidgets import QWebEngineView, QWebEnginePage
-from PySide2.QtWidgets import QMainWindow
+from PySide2.QtCore import Qt, Slot, QRect, QObject, QUrl, QFileInfo
+from PySide2.QtGui import QIcon
+from PySide2.QtWebEngineWidgets import QWebEngineView, QWebEnginePage, QWebEngineDownloadItem
+from PySide2.QtWidgets import QMainWindow, QFileDialog
 
 from runekit.browser import Alt1WebChannel
 from runekit.ui.game_snap import GameSnapMixin
@@ -74,6 +73,8 @@ class BrowserWindow(GameSnapMixin, QMainWindow):
             self.frame.on_exit.connect(self.close)
             self.setCentralWidget(self.frame)
 
+        self.logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
+
         self._setup_browser()
         self.setWindowTitle(self.app.manifest["appName"])
         self.setAttribute(Qt.WA_DeleteOnClose)
@@ -95,7 +96,22 @@ class BrowserWindow(GameSnapMixin, QMainWindow):
         page.iconChanged.connect(self.on_icon_changed)
         page.windowCloseRequested.connect(self.on_window_close)
         page.featurePermissionRequested.connect(self.on_permission_request)
+        page.profile().downloadRequested.connect(
+            self.on_download_requested
+        )
         return page
+
+    @Slot(QWebEngineDownloadItem)
+    def on_download_requested(self, download):
+        self.logger.info(f"Download requested {download}");
+        path = download.path()  # download.path()
+        if path:
+            download.setPath(path)
+            download.accept()
+            download.finished.connect(self.download_finished)
+
+    def download_finished(self):
+        print("DOWNLOAD FINISHED");
 
     @Slot(QRect)
     def on_geometry_change(self, size: QRect):
