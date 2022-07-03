@@ -1,7 +1,7 @@
 import logging
-from typing import TYPE_CHECKING, Callable, Tuple, Dict, List
+from typing import TYPE_CHECKING, Callable, Tuple, Dict
 
-from PySide2.QtCore import Qt, QRect, QTimer, QPoint
+from PySide2.QtCore import Qt, QRect, QTimer
 from PySide2.QtGui import QGuiApplication, QPen
 from PySide2.QtWidgets import (
     QMainWindow,
@@ -25,19 +25,24 @@ class DesktopWideOverlay(QMainWindow):
 
     def __init__(self):
         super().__init__(
-            flags=Qt.Widget | Qt.FramelessWindowHint | Qt.BypassWindowManagerHint | Qt.WindowTransparentForInput | Qt.WindowStaysOnTopHint | Qt.ToolTip
+            flags=
+            Qt.Window
+            | Qt.Tool
+            | Qt.FramelessWindowHint
+            | Qt.BypassWindowManagerHint
+            | Qt.WindowTransparentForInput
+            | Qt.WindowStaysOnTopHint
         )
         self.logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_NativeWindow, True)
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        # self.setStyleSheet("background: rgba(0, 255, 255, 32)")
+        self.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
         self.setStyleSheet("background: transparent")
         self._instances = {}
 
-        # self.scene = QGraphicsScene(QRectF(), parent=self)
-        #
         max_w = 0
         max_h = 0
         for screen in QGuiApplication.screens():
@@ -53,6 +58,7 @@ class DesktopWideOverlay(QMainWindow):
             self, instance: "GameInstance"
     ) -> Tuple[QGraphicsItem, Callable[[], None]]:
         """Add instance to manage, return a disconnect function and the canvas"""
+
         def position_changed(rect):
             self.on_instance_moved(instance, rect)
 
@@ -63,7 +69,10 @@ class DesktopWideOverlay(QMainWindow):
 
         instance.focusChanged.connect(focus_changed)
 
-        instance_pos = instance.get_position()
+        def screen_changed(screen_new):
+            self.on_screen_changed(instance, screen_new)
+
+        instance.screenChanged.connect(screen_changed)
 
         screen = instance.get_screen()
 
@@ -77,24 +86,20 @@ class DesktopWideOverlay(QMainWindow):
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.view.setStyleSheet("background: transparent;")
-        # self.view.setStyleSheet("background: rgba(0, 255, 255, 32);")
         self.view.setInteractive(False)
         self.view.setGeometry(screen_rect)
         gfx = QGraphicsRectItem(rect=screen_rect)
         gfx.setPen(self.transparent_pen)
-        # q_point = QPoint(instance_pos.x(), instance_pos.y())
-        # gfx.setPos(q_point)
         self.scene.addItem(gfx)
         self._instances[instance.wid] = gfx
         self.setGeometry(geom)
-        self.logger.info(
-            f"onscreen: ({geom.x()},{geom.y()}:{geom.width()} x {geom.height()}) self: ({self.geometry()})  scene: ({self.scene.sceneRect().toRect()}) view:({self.view.geometry()}) gfx:({gfx.scenePos()}")
 
         def disconnect():
             gfx.hide()
             self.scene.removeItem(gfx)
             instance.positionChanged.disconnect(position_changed)
             instance.focusChanged.disconnect(focus_changed)
+            instance.screenChanged.disconnect(screen_changed)
 
         return gfx, disconnect
 
@@ -108,6 +113,9 @@ class DesktopWideOverlay(QMainWindow):
         rect = self._instances[instance.wid]
         rect.setRect(0, 0, pos.width(), pos.height())
         rect.setPos(pos.x(), pos.y())
+
+    def on_screen_changed(self, instance, screen):
+        self.logger.info(f"Screen Changed!: {instance} {screen.geometry()}")
 
     def check_compatibility(self):
         QTimer.singleShot(300, self._check_compatibility)

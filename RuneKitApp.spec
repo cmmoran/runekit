@@ -28,7 +28,7 @@ exe = EXE(pyz,
           debug=False,
           bootloader_ignore_signals=False,
           strip=True,
-          upx=False,
+          upx=True,
           console=False,
           disable_windowed_traceback=False,
           target_arch=None,
@@ -39,16 +39,10 @@ coll = COLLECT(exe,
                a.zipfiles,
                a.datas, 
                strip=True,
-               upx=False,
+               upx=True,
                upx_exclude=[],
-               name='RuneKit')
+               name='RuneKitApp')
 app = BUNDLE(coll,
-             name='RuneKit.app',
+             name='RuneKitApp.app',
              icon=None,
-             bundle_identifier='de.cupco.runekit',
-             info_plist={
-                 'LSEnvironment': {
-                     'LANG': 'en_US.UTF-8',
-                     'LC_CTYPE': 'en_US.UTF-8'
-                 }
-             })
+             bundle_identifier='de.cupco.runekit')

@@ -2,7 +2,7 @@ import logging
 import sys
 from typing import Optional
 
-from PySide2.QtCore import QSize, Qt, QThreadPool, QSettings
+from PySide2.QtCore import QSize, Qt, QThreadPool, QSettings, QUrl
 from PySide2.QtGui import QIcon
 
 from runekit.app.view.browser_window import BrowserWindow
@@ -36,7 +36,7 @@ class AppWindow(BrowserWindow):
             + self.app.manifest["appName"]
         )
 
-        self.browser.load(self.app.absolute_app_url)
+        self.browser.load(QUrl(self.app.absolute_app_url))
 
         self.app_icon = self.app.host.app_store.icon(self.app.app_id)
         if self.app_icon:

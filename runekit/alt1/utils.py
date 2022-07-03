@@ -2,8 +2,6 @@ import codecs
 
 import requests
 
-from runekit.alt1.schema import AppManifest
-
 
 def fetch_bom_json(url: str):
     req = requests.get(url)

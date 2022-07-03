@@ -251,70 +251,54 @@
         },
 
         setTitleBarText(text) {
-
         },
 
         overLayRect(color, x, y, w, h, time, lineWidth) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlayRect(drawCallId++, color, x, y, w, h, time, lineWidth);
-            });
+            channel.then((chan) => chan.objects.alt1.overlayRect(drawCallId++, color, x, y, w, h, time, lineWidth));
             return true;
         },
         overLayText(str, color, size, x, y, time) {
-            return alt1.overLayTextEx(str, color, size, x, y, time, '', false, true);
+            alt1.overLayTextEx(str, color, size, x, y, time, '', false, true);
+            return true;
         },
         overLayTextEx(str, color, size, x, y, time, fontname, centered, shadow) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlayTextEx(drawCallId++, str, color, size, x, y, time, fontname, centered, shadow);
-            });
+            channel.then((chan) => chan.objects.alt1.overlayTextEx(drawCallId++, str, color, size, x, y, time, fontname, centered, shadow));
             return true;
         },
         overLayLine(color, width, x1, y1, x2, y2, time) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlayLine(drawCallId++, color, width, x1, y1, x2, y2, time);
-            });
+            channel.then((chan) => chan.objects.alt1.overlayLine(drawCallId++, color, width, x1, y1, x2, y2, time));
             return true;
         },
         overLayImage(x, y, imgstr, imgwidth, time) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlayImage(drawCallId++, x, y, imgstr, imgwidth, time);
-            });
+            channel.then((chan) => chan.objects.alt1.overlayImage(drawCallId++, x, y, imgstr, time));
             return true;
         },
         overLayClearGroup(group) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlayClearGroup(drawCallId++, group);
-            });
+            channel.then((chan) => chan.objects.alt1.overlayClearGroup(drawCallId++, group));
             return true;
         },
-        overLaySetGroup(group) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlaySetGroup(drawCallId++, group);
-            });
+        overLayBatch(batch) {
+            channel.then((chan) => chan.objects.alt1.overlayBatch(drawCallId++, batch?batch:[]));
+            return true;
+        },
+        overLaySetGroup(group, messageModel) {
+            channel.then((chan) => chan.objects.alt1.overlaySetGroup(drawCallId++, group, messageModel?messageModel:{}));
             return true;
         },
         overLayFreezeGroup(group) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlayFreezeGroup(drawCallId++, group);
-            });
+            channel.then((chan) => chan.objects.alt1.overlayFreezeGroup(drawCallId++, group));
             return true;
         },
         overLayContinueGroup(group) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlayContinueGroup(drawCallId++, group);
-            });
+            channel.then((chan) => chan.objects.alt1.overlayContinueGroup(drawCallId++, group));
             return true;
         },
         overLayRefreshGroup(group) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlayRefreshGroup(drawCallId++, group);
-            });
+            channel.then((chan) => chan.objects.alt1.overlayRefreshGroup(drawCallId++, group));
             return true;
         },
         overLaySetGroupZIndex(group, zIndex) {
-            channel.then(function(chan){
-                chan.objects.alt1.overlaySetGroupZIndex(drawCallId++, group, zIndex);
-            });
+            channel.then((chan) => chan.objects.alt1.overlaySetGroupZIndex(drawCallId++, group, zIndex));
             return true;
         },
 
@@ -333,25 +317,52 @@
         bindGetRegion(id, x, y, w, h) {
             return syncRpc({func: 'bindGetRegion', id: id, x: x, y: y, w: w, h: h});
         },
-        // bindReadString(id, fontname, x, y) {
-        //     return '';
-        // },
-        // bindReadColorString(id, fontname, color, x, y) {
-        //     return '';
-        // },
+        bindReadString(id, fontname, x, y) {
+            const args = fontname ? {fontname} : undefined;
+            return this.bindReadStringEx(id, x, y, args);
+        },
+        bindReadColorString(id, fontname, color, x, y) {
+            let args = {
+                ...(fontname ? {fontname} : {}),
+                ...(color ? {color} : {}),
+            }
+            if(!args.fontname && !args.color) {
+                args = undefined;
+            }
+            return this.bindReadStringEx(id, x, y, args);
+        },
         // // TODO: Used in AfkScape
-        // bindReadStringEx(id, x, y, args) {
-        //     return '';
-        // },
+        bindReadStringEx(id, x, y, args) {
+            /*
+            bool allowgap=false - scan empty space for more text after reading text
+            string fontname=chatfont - the font to detect
+            int[] colors=[~20 standard colors] - array of color ints to detect
+            if(args['allowgap'] === undefined) {
+                //Default. don't send it
+                args.allowgap = false;
+            }
+            if(args['fontname'] === undefined) {
+                //Default. don't send it
+                args.fontname = 'chatfont';
+            }
+            if(args['colors'] === undefined) {
+                //Default. don't send it
+            }
+             */
+            if(args !== undefined && typeof args == 'string') {
+                args = JSON.parse(args);
+            }
+            return syncRpc({func:'bindReadStringEx', id: id, x: x, y: y, ...(args !== undefined && typeof args === 'object' ? args : {})});
+        },
         // bindReadRightClickString(id, x, y) {
         //     return '';
         // },
         // bindGetPixel(id, x, y) {
         //     return -1;
         // },
-        // bindFindSubImg(id, imgstr, imgwidth, x, y, w, h) {
-        //     return '';
-        // },
+        bindFindSubImg(id, imgstr, imgwidth, x, y, w, h) {
+            return syncRpc({func: 'bindFindSubImg', id: id, imgstr: imgstr, imgwidth: imgwidth, x: x, y: y, w: w, h: h});
+        },
         capture(x, y, w, h) {
             let data = syncRpc({func: 'getRegionRaw', x: x, y: y, w: w, h: h});
             return str2ab(data);
@@ -398,12 +409,22 @@
            alt1.lastWorldHop = new Date().getTime();
         });
 
-        instance.alt1Signal.connect(function (pos){
-            let mouseX = pos >> 16;
-            let mouseY = pos & 0xFFFF;
+        instance.push_message_signal.connect(function(msg) {
+            let event = {
+                eventName: "userevent",
+                argument: msg
+            };
+            emit(event);
+        });
+
+        instance.alt1Signal.connect((_data) => {
+            let data = _data[0];
+            let mouseX = data.mouse >> 16;
+            let mouseY = data.mouse & 0xFFFF;
             let event = {
                 eventName: 'alt1pressed',
                 text: '',
+                keyData: data.keyData,
                 mouseAbs: {
                     x: mouseX + instance.gamePositionX,
                     y: mouseY + instance.gamePositionY,

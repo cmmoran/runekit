@@ -10,6 +10,7 @@ from PySide2.QtWidgets import (
     QMessageBox,
 )
 
+# noinspection PyUnresolvedReferences
 import runekit._resources
 from runekit import browser
 from runekit.game import get_platform_manager
@@ -18,6 +19,8 @@ import AppKit
 info = AppKit.NSBundle.mainBundle().infoDictionary()
 info["LSBackgroundOnly"] = "1"
 info["LSUIElement"] = "1"
+
+global game_manager
 
 @click.command(
     context_settings=dict(
@@ -28,6 +31,7 @@ info["LSUIElement"] = "1"
 @click.argument("qt_args", nargs=-1, type=click.UNPROCESSED)
 @click.argument("app_url", required=False)
 def main(app_url, game_index, qt_args):
+    global game_manager
     logging.basicConfig(level=logging.INFO)
 
     logging.info("Starting QtWebEngine")
@@ -66,6 +70,7 @@ def main(app_url, game_index, qt_args):
         app.exec_()
         sys.exit(0)
     except Exception as e:
+        game_manager = None
         msg = QMessageBox(
             QMessageBox.Critical,
             "Oh No!",

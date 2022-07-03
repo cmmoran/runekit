@@ -1,3 +1,4 @@
+from PySide2.QtCore import QByteArray
 from PySide2.QtWebEngineCore import (
     QWebEngineUrlScheme,
 )
@@ -7,7 +8,7 @@ class RuneKitScheme(QWebEngineUrlScheme):
     scheme = b"rk"
 
     def __init__(self):
-        super().__init__(self.scheme)
+        super().__init__(QByteArray(self.scheme))
         self.setSyntax(QWebEngineUrlScheme.Syntax.Path)
         self.setDefaultPort(QWebEngineUrlScheme.PortUnspecified)
         self.setFlags(
@@ -21,7 +22,7 @@ class Alt1Scheme(QWebEngineUrlScheme):
     scheme = b"alt1"
 
     def __init__(self):
-        super().__init__(self.scheme)
+        super().__init__(QByteArray(self.scheme))
         self.setSyntax(QWebEngineUrlScheme.Syntax.Path)
         self.setDefaultPort(QWebEngineUrlScheme.PortUnspecified)
 

@@ -74,17 +74,17 @@ class ApplicationPage(QWidget):
         buttons = QVBoxLayout()
         buttons.setAlignment(Qt.AlignTop)
 
-        add_button = QPushButton(QIcon.fromTheme("list-add"), "", self)
+        add_button = QPushButton(QIcon.fromTheme("list-add"), "+", self)
         add_button.setToolTip("Add application")
         add_button.clicked.connect(self.on_add)
         buttons.addWidget(add_button)
 
-        mkdir_button = QPushButton(QIcon.fromTheme("folder-new"), "", self)
+        mkdir_button = QPushButton(QIcon.fromTheme("folder-new"), "Dir", self)
         mkdir_button.setToolTip("Make directory")
         mkdir_button.clicked.connect(self.on_mkdir)
         buttons.addWidget(mkdir_button)
 
-        delete_button = QPushButton(QIcon.fromTheme("list-remove"), "", self)
+        delete_button = QPushButton(QIcon.fromTheme("list-remove"), "-", self)
         delete_button.setToolTip("Remove selected item")
         delete_button.clicked.connect(self.on_delete)
         buttons.addWidget(delete_button)

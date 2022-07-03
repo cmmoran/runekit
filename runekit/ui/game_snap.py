@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from PySide2.QtCore import QRect
+from PySide2.QtCore import QRect, QPoint
 from PySide2.QtWidgets import QMainWindow
 
 if TYPE_CHECKING:
@@ -13,7 +13,9 @@ class GameSnapMixin(QMainWindow):
 
     def snap_to_game(self):
         rect = self.app.game_instance.get_position()
-        pos = rect.topLeft()
+        # pos = rect.topLeft()
+        mid = rect.center()
+        pos = QPoint(mid.x()-self.width() / 2, mid.y() - self.height()/2)
         # if pos.x() < 0:
         #     pos.setX(0)
         # if pos.y() < 0:

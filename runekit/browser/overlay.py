@@ -1,23 +1,23 @@
-import sys
+import base64
 import collections
 import functools
-import hashlib
 import logging
-from typing import List, Dict, Tuple, Optional, TYPE_CHECKING
+import sys
+from types import SimpleNamespace
+from typing import List, Dict, Tuple, Optional, TYPE_CHECKING, Union, Sequence
 
-from PySide2.QtCore import QObject, QTimer, Qt
-from PySide2.QtGui import QFont, QPen, QImage, QPixmap
+from PySide2.QtCore import QObject, QTimer, Qt, QByteArray, QPoint
+from PySide2.QtGui import QFont, QPen, QImage, QPixmap, QCursor
 from PySide2.QtWidgets import (
     QGraphicsItem,
     QGraphicsDropShadowEffect,
-    QGraphicsTextItem,
     QGraphicsRectItem,
     QGraphicsItemGroup,
     QGraphicsLineItem,
     QGraphicsPixmapItem,
 )
 
-from .utils import decode_color
+from .utils import decode_color, RecursiveNamespace, MQGraphicsTextItem
 
 if TYPE_CHECKING:
     from .api import Alt1Api
@@ -42,12 +42,14 @@ def ensure_overlay(f):
 
 class OverlayApi(QObject):
     # TODO: I think this could be implemented by QGraphicsItemGroup, maybe even more performant
-    current_group = ""
-    groups: Dict[str, List[QGraphicsItem]]
-    frozen_group: Dict[str, QGraphicsItemGroup]
+    current_group: List[str] = []
+    groups: Dict[str, Tuple[QGraphicsItemGroup, int]]
+    frozen_groups: Dict[str, Tuple[QGraphicsItemGroup, int]]
     queue: List[Tuple[int, str, List]]
     last_call_id: Optional[int] = None
     overlay_area: Optional[QGraphicsItem] = None
+    crosshairs: bool = False
+    message_model = {}
 
     def __init__(self, base_api: "Alt1Api", **kwargs):
         super().__init__(**kwargs)
@@ -71,7 +73,7 @@ class OverlayApi(QObject):
 
         self.queue.append((call_id, command, list(args)))
         self.queue.sort(key=lambda x: x[0])
-        self.logger.info("%d %s %s", call_id, command, repr(args))
+        self.logger.info("%d %s %s", call_id, command, repr(args)[:180])
 
         QTimer.singleShot(0, self.process_queue)
 
@@ -80,10 +82,11 @@ class OverlayApi(QObject):
             head = self.queue[0]
             f = getattr(self, head[1])
             if (
-                hasattr(f, "barrier")
-                and self.last_call_id is not None
-                and head[0] != self.last_call_id + 1
+                    hasattr(f, "barrier")
+                    and self.last_call_id is not None
+                    and head[0] != self.last_call_id + 1
             ):
+                self.logger.info(f"ignore {head[0]} {head[1]} {repr(head[2])[:180]}")
                 return
 
             head = self.queue.pop(0)
@@ -100,89 +103,215 @@ class OverlayApi(QObject):
                 )
 
     def _finalize_gfx(
-        self, gfx: QGraphicsItem, timeout: int, group: Optional[str] = None
+            self, sgfx: Union[QGraphicsItem, Sequence[QGraphicsItem]], timeout: int, name: Optional[str] = None
     ):
-        timeout = min(20000, max(timeout, 1))
-
-        if group is None:
-            group = self.current_group
-
-        if group in self.frozen_group:
-            self.frozen_group[group].addToGroup(gfx)
+        if isinstance(sgfx, QGraphicsItem):
+            gfx = [sgfx]
         else:
-            self.groups[group].append(gfx)
-            gfx.setParentItem(self.overlay_area)
+            gfx = sgfx
+
+        if name is None:
+            name = self.peek_current_group()
+
+        self.group(name, timeout, gfx)
 
         def hide():
             try:
-                gfx.scene().removeItem(gfx)
+                self.hide_group(name)
             except AttributeError:
                 pass
 
-            try:
-                self.groups[group].remove(gfx)
-            except (KeyError, ValueError):
-                pass
+        if timeout > 0:
+            QTimer.singleShot(timeout, hide)
 
-        QTimer.singleShot(timeout, hide)
+    def pop_current_group(self):
+        if len(self.current_group) == 0:
+            return ""
+        group = self.current_group[0]
+        self.current_group = self.current_group[1::]
+        return group
+
+    def peek_current_group(self):
+        if len(self.current_group) == 0:
+            return ""
+        return self.current_group[0]
+
+    def push_current_group(self, name):
+        if name in self.current_group:
+            self.current_group.remove(name)
+        self.current_group.insert(0, name)
+
+    def hide_group(self, name):
+        if name in self.groups:
+            group, _ = self.groups[name]
+            del self.groups[name]
+            group.scene().removeItem(group)
+            self.api.push("hide-group", name)
+
+    def ungroup(self, name):
+        if name in self.groups:
+            group, timeout = self.groups[name]
+            items = group.childItems()
+            del self.groups[name]
+        elif name in self.frozen_groups:
+            group, timeout = self.frozen_groups[name]
+            items = group.childItems()
+            del self.frozen_groups[name]
+        else:
+            return None, -1
+        group.scene().destroyItemGroup(group)
+        return items, timeout
+
+    def group(self, name, timeout=20000, items=None):
+        if name in self.groups or name in self.frozen_groups:
+            if name in self.groups:
+                group, _ = self.groups[name]
+            else:
+                group, _ = self.frozen_groups[name]
+            if items is not None:
+                for item in items:
+                    group.addToGroup(item)
+                group.scene().update()
+            return group
+        else:
+            if isinstance(items, Sequence):
+                group = self.overlay_area.scene().createItemGroup(items)
+            else:
+                group = self.overlay_area.scene().createItemGroup([items])
+
+        if timeout <= 0:
+            self.frozen_groups[name] = (group, 0)
+        else:
+            self.groups[name] = (group, min(20000, max(timeout, 1)))
+        return group
 
     def reset(self):
         if hasattr(self, "groups"):
-            for item in self.groups.values():
-                if item and item.scene():
-                    item.scene().removeItem(item)
+            for items, _ in self.groups.values():
+                if items.scene():
+                    items.scene().removeItem(items)
+            self.groups.clear()
 
-        self.groups = collections.defaultdict(list)
-        self.frozen_group = {}
+        if hasattr(self, "frozen_groups"):
+            for items, _ in self.frozen_groups.values():
+                if items.scene():
+                    items.scene().removeItem(items)
+            self.frozen_groups.clear()
+
+        self.groups = collections.defaultdict()
+        self.frozen_groups = collections.defaultdict()
         self.queue = []
         self.last_call_id = None
 
-    @barrier
+    def update_child_text(self, inner_group, model):
+        for child in inner_group.childItems():
+            if isinstance(child, MQGraphicsTextItem) and child.data(0):
+                current_text = child.toPlainText()
+                if child.data(0).format(self=model) != current_text:
+                    child.setPlainText(child.data(0).format(self=model))
+                    if hasattr(model, "__animate"):
+                        child.animate()
+
     @ensure_overlay
-    def overlay_set_group(self, name: str):
-        self.current_group = name
+    def overlay_batch(self, commands: List[Tuple[str, List]]):
+        for command in commands:
+            assert command[0] != "_"
+
+            f = getattr(self, command[0])
+            try:
+                f(*command[1])
+            except:
+                self.logger.error(
+                    "API call exception #%d %s(%s)",
+                    command[0],
+                    repr(command[1]),
+                    exc_info=True,
+                )
+
+    @ensure_overlay
+    def overlay_set_group(self, name: str, message_model=None):
+        self.push_current_group(name)
+        if message_model is not None:
+            if isinstance(message_model, dict):
+                message_model = RecursiveNamespace(**message_model)
+            self.message_model[name] = message_model
+            if name in self.frozen_groups:
+                group, _ = self.frozen_groups[name]
+                self.update_child_text(group, message_model)
 
     @barrier
     @ensure_overlay
     def overlay_clear_group(self, name: str):
-        for item in self.groups.get(name, []):
-            item.scene().removeItem(item)
+        if name in self.frozen_groups:
+            self.overlay_continue_group(name)
 
-        try:
-            del self.groups[name]
-        except KeyError:
-            pass
+        self.hide_group(name)
 
     @barrier
     @ensure_overlay
     def overlay_freeze_group(self, name: str):
-        if name in self.frozen_group:
+        if name in self.frozen_groups or name not in self.groups:
+            self.pop_current_group()
             return
 
-        self.frozen_group[name] = QGraphicsItemGroup()
+        items, _ = self.ungroup(name)
+
+        self._finalize_gfx(items, 0, name=name)
 
     @barrier
     @ensure_overlay
     def overlay_continue_group(self, name: str):
-        if name not in self.frozen_group:
+        if name in self.groups or name not in self.frozen_groups:
+            self.push_current_group(name)
             return
 
-        gfx = self.frozen_group[name]
-        del self.frozen_group[name]
-        self._finalize_gfx(gfx, 20000, group=name)
+        items, _ = self.ungroup(name)
+
+        self._finalize_gfx(items, 20000, name=name)
 
     @barrier
     @ensure_overlay
     def overlay_refresh_group(self, name: str):
-        if name not in self.frozen_group:
+        if name not in self.frozen_groups:
             return
 
         self.overlay_continue_group(name)
         self.overlay_freeze_group(name)
 
     @ensure_overlay
+    def overlay_move_group(self, name: str, enable):
+        if name not in self.frozen_groups:
+            return
+
+        group, _ = self.frozen_groups[name]
+
+        if enable:
+            def mover():
+                width = int(self.api.get_game_position_width())
+                height = int(self.api.get_game_position_height())
+                mpos = QCursor.pos()
+                npos = QPoint(mpos.x() - self.api.get_game_position_x() - int(width / 2), mpos.y() - self.api.get_game_position_y() - int(height / 2))
+                try:
+                    if group.pos().x() != npos.x() or group.pos().y() != npos.y():
+                        group.setPos(npos.x(), npos.y())
+                        if name in self.message_model:
+                            model = self.message_model[name]
+                            model.mouse_x = npos.x() + int(width / 2)
+                            model.mouse_y = npos.y() + int(height / 2)
+                        else:
+                            model = SimpleNamespace(**{"mouse_x": npos.x() + int(width / 2), "mouse_y": npos.y() + int(height / 2)})
+                            self.message_model[name] = model
+                        self.update_child_text(group, model)
+                except:
+                    self.api.mouse_move_signal.disconnect()
+
+            self.api.mouse_move_signal.connect(mover)
+        else:
+            self.api.mouse_move_signal.disconnect()
+
+    @ensure_overlay
     def overlay_rect(
-        self, color: int, x: int, y: int, w: int, h: int, timeout: int, line_width: int
+            self, color: int, x: int, y: int, w: int, h: int, timeout: int, line_width: int
     ):
         pen = QPen(decode_color(color))
         pen.setWidthF(max(1.0, line_width / 10))
@@ -194,14 +323,14 @@ class OverlayApi(QObject):
 
     @ensure_overlay
     def overlay_line(
-        self,
-        color: int,
-        line_width: int,
-        x1: int,
-        y1: int,
-        x2: int,
-        y2: int,
-        timeout: int,
+            self,
+            color: int,
+            line_width: int,
+            x1: int,
+            y1: int,
+            x2: int,
+            y2: int,
+            timeout: int,
     ):
         pen = QPen(decode_color(color))
         pen.setWidthF(max(1.0, line_width / 10))
@@ -213,23 +342,29 @@ class OverlayApi(QObject):
 
     @ensure_overlay
     def overlay_text(
-        self,
-        message: str,
-        color: int,
-        size: int,
-        x: int,
-        y: int,
-        timeout: int,
-        font_name: str,
-        centered: bool,
-        shadow: bool,
+            self,
+            message: str,
+            color: int,
+            size: int,
+            x: int,
+            y: int,
+            timeout: int,
+            font_name: str,
+            centered: bool,
+            shadow: bool,
     ):
-        gfx = QGraphicsTextItem(message)
+        group = self.peek_current_group()
+        if group in self.message_model:
+            msg_model = self.message_model[group]
+            gfx = MQGraphicsTextItem(message.format(self=msg_model))
+        else:
+            gfx = MQGraphicsTextItem(message)
+        gfx.setData(0, message)
         gfx.setDefaultTextColor(decode_color(color))
 
         if font_name == "" and sys.platform == "darwin":
             # Don't use Helvetica on Mac
-            font_name = "Verdana"
+            font_name = "Menlo"
 
         font = QFont(font_name, min(50, size))
         font.setStyleHint(QFont.SansSerif)
@@ -246,14 +381,21 @@ class OverlayApi(QObject):
             # The provided x, y is at the center of the text
             bound = gfx.boundingRect()
             gfx.setPos(x - (bound.width() / 2), y - (bound.height() / 2))
+            xform_point = gfx.mapFromScene(x, y)
+            gfx.setTransformOriginPoint(xform_point)
         else:
+            bound = gfx.boundingRect()
             gfx.setPos(x, y)
+            xform_point = gfx.mapFromScene(x + (bound.width() / 2), y + (bound.height() / 2))
+            gfx.setTransformOriginPoint(xform_point)
 
         self._finalize_gfx(gfx, timeout)
 
     @ensure_overlay
-    def overlay_image(self, img: bytes, x: int, y: int, width: int, timeout: int):
-        img = self.get_qimage(img, width)
+    def overlay_image(self, img: bytes, x: int, y: int, timeout: int):
+        if isinstance(img, str):
+            img = base64.b64decode(img)
+        img = self.get_qimage(img)
 
         gfx = QGraphicsPixmapItem(QPixmap.fromImage(img))
         gfx.setPos(x, y)
@@ -262,10 +404,13 @@ class OverlayApi(QObject):
 
     @ensure_overlay
     def overlay_set_group_z(self, name: str, z_index: int):
-        for item in self.groups.get(name, []):
-            item.setZValue(z_index)
+        if name not in self.groups:
+            return
+
+        item, _ = self.groups[name]
+        item.setZValue(z_index)
 
     @functools.lru_cache(100)
-    def get_qimage(self, img: bytes, width: int):
-        height = len(img) / width / 4
-        return QImage(img, width, height, QImage.Format_ARGB32)
+    def get_qimage(self, img: bytes):
+        ba = QByteArray(img)
+        return QImage.fromData(ba)

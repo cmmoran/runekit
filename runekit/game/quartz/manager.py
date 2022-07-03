@@ -1,20 +1,25 @@
+import json
+import logging
 import time
 from functools import reduce
 from typing import List, Dict, Optional, Union
 
-import logging
-import Quartz
 import ApplicationServices
-from PySide2.QtCore import QTimer, Signal, Slot
+import Quartz
+from PySide2.QtCore import QTimer, Signal, Slot, QUrl
 from PySide2.QtGui import QDesktopServices
 from PySide2.QtWidgets import QMessageBox
 
-from .instance import QuartzGameInstance
 from runekit.game.overlay import DesktopWideOverlay
+from .instance import QuartzGameInstance
 from ..instance import GameInstance
 from ..manager import GameManager
 
 has_prompted_accessibility = False
+
+owner = "rs2client"
+# owner = "Preview"
+window_name_fragment = "RuneScape"
 
 
 class QuartzGameManager(GameManager):
@@ -82,6 +87,7 @@ class QuartzGameManager(GameManager):
     def window_info(self, v):
         print(
             str(v.valueForKey_('kCGWindowOwnerPID') or '?').rjust(7) +
+            str(v.valueForKey_('kCGWindowLayer') or '?').rjust(11) +
             ' ' + str(v.valueForKey_('kCGWindowNumber') or '?').rjust(5) +
             ' {' + ('' if v.valueForKey_('kCGWindowBounds') is None else (
                     str(int(v.valueForKey_('kCGWindowBounds').valueForKey_('X'))) + ',' +
@@ -94,11 +100,13 @@ class QuartzGameManager(GameManager):
                                                                  v.valueForKey_('kCGWindowName') or ''))
         )
 
-    def window_list(self, wl):
+    def window_list_info(self, wl):
         for v in wl:
             self.window_info(v)
 
     def get_instances(self) -> List[GameInstance]:
+        global owner
+
         full_screen_windows = Quartz.CGWindowListCopyWindowInfo(
             Quartz.kCGWindowListExcludeDesktopElements, Quartz.kCGNullWindowID
         )
@@ -107,7 +115,7 @@ class QuartzGameManager(GameManager):
             owner_name = window.valueForKey_(Quartz.kCGWindowOwnerName) or ''
             window_name = window.valueForKey_(Quartz.kCGWindowName) or ''
 
-            if owner_name == "rs2client" and window_name == "RuneScape":
+            if owner_name == owner and window_name.startswith(window_name_fragment):
                 self.window_info(window)
 
                 wid = int(window[Quartz.kCGWindowNumber])
@@ -117,8 +125,11 @@ class QuartzGameManager(GameManager):
                         self, wid, pid, parent=self
                     )
         instance_list = list(self._instances.values())
-        self.logger.info(f"Instance list: {instance_list}")
-        # instance_list = sorted(list(self._instances.values()), key=lambda x: x.height)
+        if len(instance_list) == 0 and owner != "Preview":
+            owner = "Preview"
+            return self.get_instances()
+
+        # self.logger.info(f"Instance list: {instance_list}")
         return instance_list
 
     def get_active_instance(self) -> Union[GameInstance, None]:
@@ -134,15 +145,20 @@ class QuartzGameManager(GameManager):
                 return instance
 
     def _on_input(self, proxy, type_, event, _):
-        event_type = Quartz.CGEventGetType(event)
-        if event_type == Quartz.kCGEventTapDisabledByUserInput:
+        # event_type = Quartz.CGEventGetType(event)
+        if type_ == Quartz.kCGEventTapDisabledByUserInput:
             QTimer.singleShot(0, self.accessibility_popup)
             return event
-        elif event_type == Quartz.kCGEventTapDisabledByTimeout:
+        elif type_ == Quartz.kCGEventTapDisabledByTimeout:
             Quartz.CGEventTapEnable(self._tap, True)
             return event
 
-        nsevent = Quartz.NSEvent.eventWithCGEvent_(event)
+        try:
+            nsevent = Quartz.NSEvent.eventWithCGEvent_(event)
+        except:
+            self.logger.info(f"Failed to convert event: {event} {type}")
+            return event
+
         if nsevent.type() == Quartz.NSEventTypeKeyDown:
             front_app = Quartz.NSWorkspace.sharedWorkspace().frontmostApplication()
             instance = self.get_instance_by_pid(front_app.processIdentifier())
@@ -152,13 +168,18 @@ class QuartzGameManager(GameManager):
         if not instance:
             return event
 
-        # Check for cmd1
+        self.logger.info(f"e: {nsevent.type()} {instance}")
+        # Check for cmd3
         if nsevent.type() == Quartz.NSEventTypeKeyDown:
             if (
-                    nsevent.keyCode() == 18
+                    18 <= nsevent.keyCode() <= 27
                     and nsevent.modifierFlags() & Quartz.NSEventModifierFlagCommand
+                    and nsevent.modifierFlags() & Quartz.NSEventModifierFlagShift
             ):
-                instance.alt1_pressed.emit()
+                message = {"keyData": {"type": nsevent.type(), "keyCode": nsevent.keyCode(),
+                                       "characters": nsevent.charactersIgnoringModifiers()}}
+                self.logger.info(f"ke: {json.dumps(message)}")
+                instance.alt1_pressed.emit(message)
                 return None
 
         instance.game_activity.emit()
@@ -182,5 +203,5 @@ class QuartzGameManager(GameManager):
 
         if button == QMessageBox.Open:
             QDesktopServices.openUrl(
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_Screen Recording"
+                QUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_Screen_Recording")
             )

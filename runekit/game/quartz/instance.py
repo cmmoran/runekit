@@ -3,12 +3,12 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-import Quartz
+import ApplicationServices
+import Quartz as Quartz
 import objc
 from PIL import Image
-from PySide2.QtCore import QRect, QPoint, QSize
+from PySide2.QtCore import QRect
 from PySide2.QtGui import QGuiApplication, QScreen
-import ApplicationServices
 from PySide2.QtWidgets import QGraphicsItem
 
 from ..instance import GameInstance
@@ -17,7 +17,7 @@ from ..psutil_mixins import PsUtilNetStat
 if TYPE_CHECKING:
     from .manager import QuartzGameManager
 
-_debug_dump_file = False
+_debug_dump_file = True
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +32,7 @@ def cgimageref_to_image(imgref) -> Image:
     buf = Quartz.CFDataCreateMutable(None, 0)
 
     dest = Quartz.CGImageDestinationCreateWithData(buf, "public.tiff", 1, None)
+    # dest = Quartz.CGImageDestinationCreateWithData(buf, CoreServices.kUTTypeTIFF, 1, None)
     Quartz.CGImageDestinationAddImage(dest, imgref, None)
     Quartz.CGImageDestinationFinalize(dest)
 
@@ -41,6 +42,9 @@ def cgimageref_to_image(imgref) -> Image:
     py_buf.seek(0)
 
     out = Image.open(py_buf, formats=("TIFF",))
+    # out = Image.open(py_buf, formats=("TIFF",))
+
+    # out = out.convert("RGBA")
 
     if _debug_dump_file:
         out.save("/tmp/game.bmp")
@@ -172,6 +176,10 @@ class QuartzGameInstance(PsUtilNetStat, GameInstance):
             Quartz.kCGWindowImageBoundsIgnoreFraming,
         )
         if not imgref:
+            infos = Quartz.CGWindowListCreateDescriptionFromArray([self.wid])
+            if len(infos) == 0:
+                self.logger.info(f"Window {self.wid} is gone")
+                return self.__game_last_image
             self.manager.request_accessibility_popup.emit()
             raise NoCapturePermission
 

@@ -10,6 +10,8 @@
         <file>runekit/ui/skins/default/settingsHover.png</file>
         <file>runekit/ui/skins/default/minimize.png</file>
         <file>runekit/ui/skins/default/minimizeHover.png</file>
+        <file>runekit/ui/skins/default/move.png</file>
+        <file>runekit/ui/skins/default/moveHover.png</file>
         <file>runekit/ui/skins/default/borderTL.png</file>
         <file>runekit/ui/skins/default/borderT.png</file>
         <file>runekit/ui/skins/default/borderTR.png</file>
@@ -18,5 +20,12 @@
         <file>runekit/ui/skins/default/borderBL.png</file>
         <file>runekit/ui/skins/default/borderB.png</file>
         <file>runekit/ui/skins/default/borderBR.png</file>
+        <file>runekit/ui/skins/default/fonts/10pt.data.png</file>
+        <file>runekit/ui/skins/default/fonts/12pt.data.png</file>
+        <file>runekit/ui/skins/default/fonts/14pt.data.png</file>
+        <file>runekit/ui/skins/default/fonts/16pt.data.png</file>
+        <file>runekit/ui/skins/default/fonts/18pt.data.png</file>
+        <file>runekit/ui/skins/default/fonts/20pt.data.png</file>
+        <file>runekit/ui/skins/default/fonts/22pt.data.png</file>
     </qresource>
 </RCC>

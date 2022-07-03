@@ -1,10 +1,12 @@
 import base64
+import inspect
 import json
 import logging
 import secrets
-from typing import TYPE_CHECKING, Dict, Callable, List, NamedTuple
+from typing import TYPE_CHECKING, Dict, Callable, List, NamedTuple, Literal
 from urllib.parse import urljoin
 
+import numpy as np
 from PySide2.QtCore import (
     QObject,
     Slot,
@@ -16,7 +18,7 @@ from PySide2.QtCore import (
     QTimer,
     QThreadPool,
     QRunnable,
-    QJsonValue,
+    QJsonValue, QJsonArray,
 )
 from PySide2.QtGui import QGuiApplication, QCursor, QScreen
 from PySide2.QtWebChannel import QWebChannel
@@ -26,14 +28,15 @@ from runekit.browser.overlay import OverlayApi
 from runekit.browser.utils import (
     ApiPermissionDeniedException,
     image_to_stream,
-    encode_mouse,
-    decode_image,
+    encode_mouse, decode_image, subimg_location, read_string_from_image, RecursiveNamespace,
 )
 from runekit.game.instance import ImageType
 from runekit.ui.tray import tray_icon
 
 if TYPE_CHECKING:
     from runekit.app.app import App
+
+PROGRESS_TYPE = Literal["RESET", "IN_PROGRESS", "ERROR", "LOADING", "PAUSED"]
 
 
 class BoundedRegion(NamedTuple):
@@ -44,7 +47,8 @@ class Alt1Api(QObject):
     app: "App"
     rpc_funcs: Dict[str, Callable]
 
-    alt1Signal = Signal(int)
+    alt1Signal = Signal(QJsonArray)
+    push_message_signal = Signal(str)
 
     _screen_info: QRect
     _bound_regions: List[BoundedRegion]
@@ -72,6 +76,8 @@ class Alt1Api(QObject):
             "bindRegion": self.bind_region,
             "bindGetRegion": self.bind_get_region,
             "bindGetRegionRaw": self.bind_get_region_raw,
+            "bindFindSubImg": self.bind_find_sub_img,
+            "bindReadStringEx": self.bind_read_string_ex,
         }
 
         self._update_screen_info()
@@ -82,7 +88,7 @@ class Alt1Api(QObject):
         self.app.game_instance.worldChanged.connect(self.world_change_signal)
 
         poll_timer = QTimer(self)
-        poll_timer.setInterval(250)
+        poll_timer.setInterval(50)
 
         if self.app.has_permission("gamestate"):
             poll_timer.timeout.connect(self.mouse_move_signal)
@@ -198,6 +204,7 @@ class Alt1Api(QObject):
 
     world_change_signal = Signal()
     world = Property(bool, get_world, notify=world_change_signal)
+
     # endregion
 
     # region Sync RPC handlers
@@ -256,6 +263,48 @@ class Alt1Api(QObject):
 
         return image_to_stream(image.image, x, y, w, h, mode="rgba", ignore_limit=True)
 
+    def bind_find_sub_img(self, id, imgstr, imgwidth, x, y, w, h):
+        if not self.app.has_permission("pixel"):
+            raise ApiPermissionDeniedException("pixel")
+
+        needle = decode_image(imgstr, imgwidth)
+
+        haystack = np.asarray(self._bound_regions[id - 1].image)[y:y + h, x:x + w]
+
+        locs, success = subimg_location(needle, haystack)
+        if success:
+            match_result = [{
+                "x": locs[0],
+                "y": locs[1]
+            }]
+            # self.logger.debug(
+            #     f"found needle @ ({locs[0]},{locs[1]})({x},{y} {w} x {h}) for {imgwidth} haystack b64[...]")
+        else:
+            match_result = []
+
+        return match_result
+
+    def bind_read_string_ex(self, id, x, y, w, h, allowgap=False, fontname='chatfont', colors=()):
+        if not self.app.has_permission("pixel"):
+            raise ApiPermissionDeniedException("pixel")
+        haystack = np.asarray(self._bound_regions[id - 1].image)
+        nh, nw, _ = haystack.shape[::]
+        w = max(0, min(nw, w))
+        h = max(0, min(nh, h))
+        haystack = haystack[y:y + h, x:x + w]
+
+        # ocr = read_string_from_image(haystack)
+        ocr = read_string_from_image(haystack)
+
+        return ocr
+
+    def push(self, event_name, event_detail):
+        event = json.dumps({
+            "eventName": event_name,
+            "detail": event_detail
+        })
+        self.push_message_signal.emit(event)
+
     # endregion
 
     # region Async RPC handlers (Slots)
@@ -284,16 +333,9 @@ class Alt1Api(QObject):
         if not self.app.has_permission("overlay"):
             raise ApiPermissionDeniedException("overlay")
 
-        type_map = {
-            0: "RESET",
-            1: "IN_PROGRESS",
-            2: "ERROR",
-            3: "LOADING",
-            4: "PAUSED",
-        }
         # This can be called with null, but since the default value is 0 we call RESET anyway
         self.app.game_instance.set_taskbar_progress(
-            type_map[type_.toDouble(0)], progress.toDouble(0)
+            PROGRESS_TYPE[type_.toDouble(0)], progress.toDouble(0)
         )
 
     @Slot(int, int, int, int, int, int, int, int)
@@ -314,19 +356,19 @@ class Alt1Api(QObject):
             call_id, "overlay_line", color, width, x1, y1, x2, y2, timeout
         )
 
-    @Slot(int, int, int, str, int, int)
-    def overlayImage(self, call_id, x, y, img_str, img_width, timeout):
+    @Slot(int, int, int, str, int)
+    def overlayImage(self, call_id, x, y, img_str, timeout):
         if not self.app.has_permission("overlay"):
             raise ApiPermissionDeniedException("overlay")
 
         img_bytes = base64.b64decode(img_str)
         self._overlay.enqueue(
-            call_id, "overlay_image", img_bytes, x, y, img_width, timeout
+            call_id, "overlay_image", img_bytes, x, y, timeout
         )
 
     @Slot(int, str, int, int, int, int, int, str, bool, bool)
     def overlayTextEx(
-        self, call_id, message, color, size, x, y, timeout, font_name, centered, shadow
+            self, call_id, message, color, size, x, y, timeout, font_name, centered, shadow
     ):
         if not self.app.has_permission("overlay"):
             raise ApiPermissionDeniedException("overlay")
@@ -345,12 +387,21 @@ class Alt1Api(QObject):
             shadow,
         )
 
-    @Slot(int, str)
-    def overlaySetGroup(self, call_id, name):
+    @Slot(int, QJsonArray)
+    def overlayBatch(self, call_id, batch):
         if not self.app.has_permission("overlay"):
             raise ApiPermissionDeniedException("overlay")
 
-        self._overlay.enqueue(call_id, "overlay_set_group", name)
+        self._overlay.enqueue(call_id, "overlay_batch", batch.toVariantList())
+
+    @Slot(int, str, QJsonValue)
+    def overlaySetGroup(self, call_id, name, message_model):
+        if not self.app.has_permission("overlay"):
+            raise ApiPermissionDeniedException("overlay")
+
+        model = message_model.toVariant()
+        mm = RecursiveNamespace(**model)
+        self._overlay.enqueue(call_id, "overlay_set_group", name, mm)
 
     @Slot(int, str)
     def overlayClearGroup(self, call_id, name):
@@ -381,11 +432,11 @@ class Alt1Api(QObject):
         self._overlay.enqueue(call_id, "overlay_refresh_group", name)
 
     @Slot(int, str, int)
-    def overlaySetGroupZIndex(self, call_id, group, zIndex):
+    def overlaySetGroupZIndex(self, call_id, group, z_index):
         if not self.app.has_permission("overlay"):
             raise ApiPermissionDeniedException("overlay")
 
-        self._overlay.enqueue(call_id, "overlay_set_group_z", group, zIndex)
+        self._overlay.enqueue(call_id, "overlay_set_group_z", group, z_index)
 
     # endregion
 
@@ -428,10 +479,13 @@ class Alt1ApiPrivate(QObject):
         self.api._game_scaling = scale
         self.api.game_scaling_change_signal.emit()
 
-    @Slot()
-    def on_alt1(self):
+    @Slot(dict)
+    def on_alt1(self, data: dict):
         mouse = self.api.get_mouse_position()
-        self.api.alt1Signal.emit(mouse)
+        data["mouse"] = mouse
+        dlist = [data]
+        message = QJsonArray.fromVariantList(list(dlist))
+        self.api.alt1Signal.emit(message)
 
 
 class Alt1WebChannel(QWebChannel):
@@ -449,10 +503,10 @@ class RuneKitRequestProcessSignals(QObject):
 
 class RuneKitRequestProcess(QRunnable):
     def __init__(
-        self,
-        handler: "RuneKitSchemeHandler",
-        request: QWebEngineUrlRequestJob,
-        **kwargs,
+            self,
+            handler: "RuneKitSchemeHandler",
+            request: QWebEngineUrlRequestJob,
+            **kwargs,
     ):
         super().__init__(**kwargs)
         self.handler = handler
@@ -509,7 +563,13 @@ class RuneKitSchemeHandler(QWebEngineUrlSchemeHandler):
             req.fail(QWebEngineUrlRequestJob.RequestDenied)
             return
 
-        processor = RuneKitRequestProcess(self, req, parent=req)
+        def kit_chooser(debug):
+            if debug:
+                return RuneKitRequestProcess(self, req)
+            else:
+                return RuneKitRequestProcess(self, req, parent=req)
+
+        processor = kit_chooser(self.isdebugging())
         processor.signals.successSignal.connect(self.on_success)
         self.thread_pool.start(processor)
 
@@ -518,3 +578,10 @@ class RuneKitSchemeHandler(QWebEngineUrlSchemeHandler):
         body = QBuffer(parent=request)
         body.setData(reply)
         request.reply(content_type, body)
+
+    @staticmethod
+    def isdebugging():
+        for frame in inspect.stack():
+            if frame[1].endswith("pydevd.py"):
+                return True
+        return False
